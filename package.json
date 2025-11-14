@@ -4,6 +4,7 @@
   "private": true,
   "description": "SeraphAI – Telegram WebApp AI assistant (Next.js + NestJS monorepo).",
   "scripts": {
+    "prepare": "husky install",
     "dev:all": "turbo run dev --parallel",
     "dev:web": "pnpm --filter @seraphai/web dev",
     "dev:api": "pnpm --filter @seraphai/api dev",
@@ -11,6 +12,12 @@
     "lint": "turbo run lint"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
+    "eslint-config-prettier": "^10.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.4.2",
     "turbo": "latest"
   },
   "packageManager": "pnpm@9.0.0"

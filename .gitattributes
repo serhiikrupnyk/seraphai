@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+*.ts  text diff=ts
+*.tsx text diff=ts
+*.js  text diff=js
+*.jsx text diff=js
+*.json text
+*.md text
+*.yml text
+*.yaml text
