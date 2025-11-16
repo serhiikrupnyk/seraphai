@@ -15,6 +15,7 @@ export default function TelegramAuthPage() {
   const [user, setUser] = useState<any>(null);
   const [debug, setDebug] = useState<DebugInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   useEffect(() => {
     try {
@@ -52,7 +53,7 @@ export default function TelegramAuthPage() {
 
       setStatus('Авторизація...');
 
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/telegram`, {
+      fetch(`${apiUrl}/auth/telegram`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -106,6 +107,7 @@ export default function TelegramAuthPage() {
       {debug && (
         <div className="mt-6 p-3 rounded-xl bg-white/5 text-xs w-full max-w-md break-words">
           <div className="font-semibold mb-1">Debug info:</div>
+          <div>apiUrl: {apiUrl || '<not set>'}</div>
           <div>hasWindow: {String(debug.hasWindow)}</div>
           <div>hasTelegram: {String(debug.hasTelegram)}</div>
           <div>hasWebApp: {String(debug.hasWebApp)}</div>
