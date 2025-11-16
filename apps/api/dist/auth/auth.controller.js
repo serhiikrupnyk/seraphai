@@ -15,24 +15,34 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
-const auth_dto_1 = require("./auth.dto");
 let AuthController = class AuthController {
     authService;
     constructor(authService) {
         this.authService = authService;
     }
-    async telegramLogin(dto) {
-        return this.authService.authWithTelegram(dto);
+    async telegram(initData) {
+        if (!initData) {
+            throw new common_1.BadRequestException('initData is required');
+        }
+        const result = await this.authService.loginWithTelegram(initData);
+        return {
+            user: result.user,
+            meta: {
+                ok: result.ok,
+                query_id: result.query_id,
+                auth_date: result.auth_date,
+            },
+        };
     }
 };
 exports.AuthController = AuthController;
 __decorate([
     (0, common_1.Post)('telegram'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_1.Body)('initData')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [auth_dto_1.TelegramAuthDto]),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
-], AuthController.prototype, "telegramLogin", null);
+], AuthController.prototype, "telegram", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService])

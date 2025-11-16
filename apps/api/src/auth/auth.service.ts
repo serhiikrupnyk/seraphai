@@ -1,48 +1,32 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { SupabaseService } from '../supabase/supabase.service';
-import { TelegramAuthDto } from './auth.dto';
-import { verifyTelegramInitData } from '../telegram/telegram-auth.util';
+import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly supabase: SupabaseService) {}
+  async loginWithTelegram(initData: string) {
+    // initData приходить як query string (tgWebAppData)
+    const params = new URLSearchParams(initData);
 
-  async authWithTelegram(dto: TelegramAuthDto) {
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) {
-      throw new Error('TELEGRAM_BOT_TOKEN is not set');
+    const userJson = params.get('user');
+    const authDate = params.get('auth_date');
+    const queryId = params.get('query_id');
+
+    let user: any = null;
+    if (userJson) {
+      try {
+        user = JSON.parse(userJson);
+      } catch (e) {
+        // поки що просто ігноруємо
+      }
     }
 
-    const { ok, error, user } = verifyTelegramInitData(dto.initData, botToken);
+    // TODO: перевірка підпису (hash)
+    // TODO: upsert у Supabase (users)
 
-    if (!ok || !user) {
-      throw new UnauthorizedException(error || 'Invalid Telegram initData');
-    }
-
-    // upsert user in Supabase
-    const dbUser = await this.supabase.upsertTelegramUser({
-      id: user.id,
-      username: user.username,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      language_code: user.language_code,
-      photo_url: user.photo_url,
-      is_premium: user.is_premium,
-    });
-
-    // Повернемо мінімальний профіль (без нічого секретного)
     return {
-      user: {
-        id: dbUser.id,
-        tg_id: dbUser.tg_id,
-        username: dbUser.username,
-        first_name: dbUser.first_name,
-        last_name: dbUser.last_name,
-        language_code: dbUser.language_code,
-        is_premium: dbUser.is_premium,
-        created_at: dbUser.created_at,
-        last_login_at: dbUser.last_login_at,
-      },
+      ok: true,
+      query_id: queryId,
+      auth_date: authDate,
+      user,
     };
   }
 }

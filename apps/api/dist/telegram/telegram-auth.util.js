@@ -60,7 +60,10 @@ function verifyTelegramInitData(initData, botToken, maxAgeSeconds = 86400) {
         data.sort();
         const dataCheckString = data.join('\n');
         const secretKey = crypto.createHash('sha256').update(botToken).digest();
-        const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+        const hmac = crypto
+            .createHmac('sha256', secretKey)
+            .update(dataCheckString)
+            .digest('hex');
         if (hmac !== hash) {
             return { ok: false, error: 'Hash mismatch (invalid initData)' };
         }

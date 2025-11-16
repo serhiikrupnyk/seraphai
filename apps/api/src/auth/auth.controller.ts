@@ -1,13 +1,25 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { TelegramAuthDto } from './auth.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('telegram')
-  async telegramLogin(@Body() dto: TelegramAuthDto) {
-    return this.authService.authWithTelegram(dto);
+  async telegram(@Body('initData') initData: string) {
+    if (!initData) {
+      throw new BadRequestException('initData is required');
+    }
+
+    const result = await this.authService.loginWithTelegram(initData);
+
+    return {
+      user: result.user,
+      meta: {
+        ok: result.ok,
+        query_id: result.query_id,
+        auth_date: result.auth_date,
+      },
+    };
   }
 }
