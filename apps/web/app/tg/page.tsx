@@ -2,70 +2,115 @@
 
 import { useEffect, useState } from 'react';
 
+type DebugInfo = {
+  hasWindow: boolean;
+  hasTelegram: boolean;
+  hasWebApp: boolean;
+  telegramKeys: string[];
+  href: string;
+};
+
 export default function TelegramAuthPage() {
-  const [status, setStatus] = useState('Ініціалізація Telegram WebApp...');
+  const [status, setStatus] = useState('Ініціалізація...');
   const [user, setUser] = useState<any>(null);
+  const [debug, setDebug] = useState<DebugInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
+    try {
+      if (typeof window === 'undefined') {
+        setStatus('window недоступний');
+        return;
+      }
 
-    if (!tg) {
-      setStatus('❌ Не вдалося знайти Telegram WebApp API');
-      return;
-    }
+      const w: any = window;
+      const tgObj = w.Telegram;
+      const tgWebApp = tgObj?.WebApp;
 
-    tg.ready();
-    setStatus('Telegram WebApp знайдено ✔');
+      const info: DebugInfo = {
+        hasWindow: true,
+        hasTelegram: !!tgObj,
+        hasWebApp: !!tgWebApp,
+        telegramKeys: tgObj ? Object.keys(tgObj) : [],
+        href: window.location.href,
+      };
+      setDebug(info);
 
-    const initData = tg.initData;
-    if (!initData) {
-      setStatus('❌ Немає initData — відкрий через Telegram');
-      return;
-    }
+      if (!tgWebApp) {
+        setStatus('❌ Не вдалося знайти Telegram WebApp API');
+        return;
+      }
 
-    const payload = { initData };
+      setStatus('Telegram WebApp знайдено ✔');
+      tgWebApp.ready();
 
-    setStatus('Авторизація...');
+      const initData: string | undefined = tgWebApp.initData;
+      if (!initData) {
+        setStatus('❌ Немає initData від Telegram');
+        return;
+      }
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/telegram`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(t);
-        }
-        return res.json();
+      setStatus('Авторизація...');
+
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/telegram`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ initData }),
       })
-      .then((data) => {
-        setUser(data.user);
-        setStatus('Авторизовано ✔');
-      })
-      .catch((err) => {
-        console.error(err);
-        setStatus('❌ Помилка авторизації');
-      });
+        .then(async (res) => {
+          if (!res.ok) {
+            const t = await res.text();
+            throw new Error(t || `HTTP ${res.status}`);
+          }
+          return res.json();
+        })
+        .then((data) => {
+          setUser(data.user);
+          setStatus('Авторизовано ✔');
+        })
+        .catch((err) => {
+          console.error(err);
+          setError(String(err));
+          setStatus('❌ Помилка авторизації');
+        });
+    } catch (e: any) {
+      console.error(e);
+      setError(String(e));
+      setStatus('❌ Фатальна помилка на клієнті');
+    }
   }, []);
 
   return (
-    <main className="flex flex-col items-center justify-center h-screen p-4 text-white">
-      <div className="text-2xl font-bold mb-4">SeraphAI</div>
+    <main className="flex flex-col items-center justify-center min-h-screen p-4 bg-black text-white">
+      <h1 className="text-3xl font-bold mb-4">SeraphAI</h1>
 
-      <div className="mb-6 text-lg">{status}</div>
+      <div className="mb-4 text-lg">{status}</div>
+
+      {error && <div className="mb-4 text-red-400 text-sm break-words">Помилка: {error}</div>}
 
       {user && (
-        <div className="mt-4 p-4 rounded-xl bg-white/10 backdrop-blur text-left">
+        <div className="mt-4 p-4 rounded-xl bg-white/10 backdrop-blur text-left w-full max-w-md">
+          <div className="font-semibold mb-2">Профіль:</div>
           <div>id: {user.id}</div>
           <div>tg_id: {user.tg_id}</div>
           <div>
             {user.first_name} {user.last_name}
           </div>
           <div>@{user.username}</div>
-          <div>{user.language_code}</div>
+          <div>lang: {user.language_code}</div>
+        </div>
+      )}
+
+      {debug && (
+        <div className="mt-6 p-3 rounded-xl bg-white/5 text-xs w-full max-w-md break-words">
+          <div className="font-semibold mb-1">Debug info:</div>
+          <div>hasWindow: {String(debug.hasWindow)}</div>
+          <div>hasTelegram: {String(debug.hasTelegram)}</div>
+          <div>hasWebApp: {String(debug.hasWebApp)}</div>
+          <div>telegramKeys: {debug.telegramKeys.join(', ') || '<none>'}</div>
+          <div>href: {debug.href}</div>
         </div>
       )}
     </main>
