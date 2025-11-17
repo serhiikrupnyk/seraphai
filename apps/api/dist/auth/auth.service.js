@@ -53,6 +53,9 @@ let AuthService = class AuthService {
         this.supabase = supabase;
     }
     async loginWithTelegram(initData) {
+        if (!initData || typeof initData !== 'string') {
+            throw new common_1.UnauthorizedException('initData is empty');
+        }
         const params = new URLSearchParams(initData);
         const hash = params.get('hash');
         if (!hash) {
@@ -67,12 +70,15 @@ let AuthService = class AuthService {
         if (!botToken) {
             throw new Error('TELEGRAM_BOT_TOKEN is not configured');
         }
-        const secretKey = crypto.createHash('sha256').update(botToken).digest();
-        const hmac = crypto
+        const secretKey = crypto
+            .createHmac('sha256', 'WebAppData')
+            .update(botToken)
+            .digest();
+        const computedHash = crypto
             .createHmac('sha256', secretKey)
             .update(dataCheckString)
             .digest('hex');
-        if (hmac !== hash) {
+        if (computedHash !== hash) {
             throw new common_1.UnauthorizedException('Invalid Telegram signature');
         }
         const userJson = params.get('user');
@@ -81,7 +87,7 @@ let AuthService = class AuthService {
             try {
                 user = JSON.parse(userJson);
             }
-            catch (e) {
+            catch {
                 throw new common_1.UnauthorizedException('Invalid user JSON');
             }
         }

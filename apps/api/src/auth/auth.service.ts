@@ -8,22 +8,21 @@ export class AuthService {
   constructor(private readonly supabase: SupabaseService) {}
 
   async loginWithTelegram(initData: string) {
-    // initData — це строка формату "query_id=...&user=...&auth_date=...&hash=..."
+    // 0. Базова перевірка
+    if (!initData || typeof initData !== 'string') {
+      throw new UnauthorizedException('initData is empty');
+    }
+
     const params = new URLSearchParams(initData);
 
-    /**
-     * 1. Витягуємо hash і прибираємо його з набору
-     */
+    // 1. Дістаємо hash, видаляємо з набору
     const hash = params.get('hash');
     if (!hash) {
       throw new UnauthorizedException('Missing hash');
     }
     params.delete('hash');
 
-    /**
-     * 2. Формуємо data_check_string згідно з офіційною докою:
-     *    key=value\n у алфавітному порядку ключів.
-     */
+    // 2. Формуємо data_check_string (key=value\n...) по алфавіту
     const dataCheckString = Array.from(params.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}=${value}`)
@@ -34,41 +33,34 @@ export class AuthService {
       throw new Error('TELEGRAM_BOT_TOKEN is not configured');
     }
 
-    /**
-     * 3. secret_key = SHA256(bot_token)
-     */
-    const secretKey = crypto.createHash('sha256').update(botToken).digest();
+    // 3. НОВИЙ ПРАВИЛЬНИЙ АЛГОРИТМ:
+    //    secret_key = HMAC_SHA256(bot_token, "WebAppData")
+    const secretKey = crypto
+      .createHmac('sha256', 'WebAppData')
+      .update(botToken)
+      .digest(); // Buffer
 
-    /**
-     * 4. hmac = HMAC_SHA256(data_check_string, secret_key)
-     */
-    const hmac = crypto
+    // 4. hmac = HMAC_SHA256(data_check_string, secret_key)
+    const computedHash = crypto
       .createHmac('sha256', secretKey)
       .update(dataCheckString)
       .digest('hex');
 
-    /**
-     * 5. Порівнюємо з hash від Telegram
-     */
-    if (hmac !== hash) {
-      // Трошки логів для дебагу (без витоку токена)
-      console.warn('Telegram signature mismatch', {
-        computedPrefix: hmac.slice(0, 8),
-        receivedPrefix: hash.slice(0, 8),
-      });
+    // Для дебагу можна тимчасово логувати (не залишай в проді):
+    // console.log({ hash, computedHash, dataCheckString });
+
+    if (computedHash !== hash) {
       throw new UnauthorizedException('Invalid Telegram signature');
     }
 
-    /**
-     * 6. Парсимо user з initData
-     */
+    // 5. Якщо підпис валідний — дістаємо user
     const userJson = params.get('user');
     let user: any = null;
 
     if (userJson) {
       try {
         user = JSON.parse(userJson);
-      } catch (e) {
+      } catch {
         throw new UnauthorizedException('Invalid user JSON');
       }
     }
@@ -80,23 +72,7 @@ export class AuthService {
       throw new UnauthorizedException('User data missing');
     }
 
-    /**
-     * (Опціонально) 7. Перевірка свіжості auth_date
-     *    Можна відрізати дуже старі initData (наприклад, >1 дня)
-     */
-    if (authDate) {
-      const authTs = Number(authDate) * 1000;
-      const now = Date.now();
-      const maxAgeMs = 24 * 60 * 60 * 1000; // 24 години
-
-      if (Number.isFinite(authTs) && now - authTs > maxAgeMs) {
-        throw new UnauthorizedException('Auth data is too old');
-      }
-    }
-
-    /**
-     * 8. Upsert у Supabase
-     */
+    // 6. Upsert у Supabase
     const client = this.supabase.getClient();
 
     const { data, error } = await client
@@ -124,9 +100,7 @@ export class AuthService {
       throw new Error('Failed to upsert user in Supabase');
     }
 
-    /**
-     * 9. Генеруємо JWT
-     */
+    // 7. Генеруємо JWT
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
       throw new Error('JWT_SECRET is not configured');
