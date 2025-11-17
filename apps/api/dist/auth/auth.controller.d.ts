@@ -4,10 +4,12 @@ export declare class AuthController {
     constructor(authService: AuthService);
     telegram(initData: string): Promise<{
         user: any;
+        telegram: any;
+        token: string;
         meta: {
             ok: boolean;
-            query_id: string | null;
             auth_date: string | null;
+            query_id: string | null;
         };
     }>;
 }

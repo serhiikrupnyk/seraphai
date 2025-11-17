@@ -10,11 +10,35 @@ type DebugInfo = {
   href: string;
 };
 
+type ApiUser = {
+  id: number;
+  tg_id: number;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  language_code: string | null;
+  is_premium: boolean | null;
+  photo_url: string | null;
+};
+
+type ApiResponse = {
+  user: ApiUser;
+  telegram: any;
+  token: string;
+  meta: {
+    ok: boolean;
+    auth_date?: string;
+    query_id?: string;
+  };
+};
+
 export default function TelegramAuthPage() {
   const [status, setStatus] = useState('Ініціалізація...');
-  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<ApiUser | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [debug, setDebug] = useState<DebugInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   useEffect(() => {
@@ -51,6 +75,11 @@ export default function TelegramAuthPage() {
         return;
       }
 
+      if (!apiUrl) {
+        setStatus('❌ NEXT_PUBLIC_API_URL не налаштований');
+        return;
+      }
+
       setStatus('Авторизація...');
 
       fetch(`${apiUrl}/auth/telegram`, {
@@ -62,13 +91,14 @@ export default function TelegramAuthPage() {
       })
         .then(async (res) => {
           if (!res.ok) {
-            const t = await res.text();
-            throw new Error(t || `HTTP ${res.status}`);
+            const text = await res.text();
+            throw new Error(text || `HTTP ${res.status}`);
           }
           return res.json();
         })
-        .then((data) => {
-          setUser(data.user);
+        .then((data: ApiResponse) => {
+          setProfile(data.user);
+          setToken(data.token);
           setStatus('Авторизовано ✔');
         })
         .catch((err) => {
@@ -81,7 +111,7 @@ export default function TelegramAuthPage() {
       setError(String(e));
       setStatus('❌ Фатальна помилка на клієнті');
     }
-  }, []);
+  }, [apiUrl]);
 
   return (
     <main className="flex flex-col items-center justify-center min-h-screen p-4 bg-black text-white">
@@ -91,16 +121,27 @@ export default function TelegramAuthPage() {
 
       {error && <div className="mb-4 text-red-400 text-sm break-words">Помилка: {error}</div>}
 
-      {user && (
+      {profile && (
         <div className="mt-4 p-4 rounded-xl bg-white/10 backdrop-blur text-left w-full max-w-md">
           <div className="font-semibold mb-2">Профіль:</div>
-          <div>id: {user.id}</div>
-          <div>tg_id: {user.tg_id}</div>
+          <div>id: {profile.id}</div>
+          <div>tg_id: {profile.tg_id}</div>
           <div>
-            {user.first_name} {user.last_name}
+            {profile.first_name} {profile.last_name}
           </div>
-          <div>@{user.username}</div>
-          <div>lang: {user.language_code}</div>
+          <div>@{profile.username}</div>
+          <div>lang: {profile.language_code}</div>
+          {profile.is_premium && <div>Telegram Premium ✔</div>}
+        </div>
+      )}
+
+      {token && (
+        <div className="mt-4 p-4 rounded-xl bg-white/10 backdrop-blur text-left w-full max-w-md text-xs break-words">
+          <div className="font-semibold mb-2">Сесія SeraphAI:</div>
+          <div>
+            JWT отримано (довжина: {token.length}). Надалі будемо відправляти його в заголовку{' '}
+            <code>Authorization: Bearer ...</code>.
+          </div>
         </div>
       )}
 

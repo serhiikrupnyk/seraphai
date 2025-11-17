@@ -26,11 +26,13 @@ let AuthController = class AuthController {
         }
         const result = await this.authService.loginWithTelegram(initData);
         return {
-            user: result.user,
+            user: result.dbUser,
+            telegram: result.tgUser,
+            token: result.token,
             meta: {
                 ok: result.ok,
-                query_id: result.query_id,
                 auth_date: result.auth_date,
+                query_id: result.query_id,
             },
         };
     }
