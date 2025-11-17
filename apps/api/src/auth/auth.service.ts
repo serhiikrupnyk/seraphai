@@ -1,58 +1,73 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+// auth.service.ts (фрагмент)
+
 import * as crypto from 'crypto';
-import * as jwt from 'jsonwebtoken';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 
 @Injectable()
 export class AuthService {
   constructor(private readonly supabase: SupabaseService) {}
 
+  private validateTelegramInitData(initData: string) {
+    const params = new URLSearchParams(initData);
+
+    const hash = params.get('hash');
+    if (!hash) throw new UnauthorizedException('Missing hash');
+
+    params.delete('hash');
+
+    // Формуємо масив пар key=value
+    const pairs: string[] = [];
+    for (const [key, value] of params.entries()) {
+      pairs.push(`${key}=${value}`);
+    }
+
+    // Сортуємо по ключу
+    pairs.sort(); // лексикографічно: auth_date..., query_id..., user...
+
+    const dataCheckString = pairs.join('\n');
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) throw new Error('Missing TELEGRAM_BOT_TOKEN');
+
+    console.log(
+      'BOT_TOKEN_PREFIX:',
+      botToken.slice(0, 10),
+      'LEN=',
+      botToken.length,
+    );
+    console.log('DATA_CHECK_STRING:', JSON.stringify(dataCheckString));
+    console.log('HASH FROM TG:', hash);
+
+    // Крок 1: secretKey = HMAC_SHA256(bot_token, "WebAppData")
+    const secretKey = crypto
+      .createHmac('sha256', 'WebAppData')
+      .update(botToken)
+      .digest(); // Buffer
+
+    // Крок 2: hmac(data_check_string, secretKey)
+    const computedHash = crypto
+      .createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex');
+
+    console.log('COMPUTED_HASH:', computedHash);
+
+    if (computedHash.toLowerCase() !== hash.toLowerCase()) {
+      throw new UnauthorizedException('Invalid Telegram signature');
+    }
+  }
+
   async loginWithTelegram(initData: string) {
     if (!initData) throw new UnauthorizedException('Empty initData');
 
     console.log('INIT DATA RAW:', initData);
 
+    // 1. Валідовуємо підпис
+    this.validateTelegramInitData(initData);
+
+    // 2. Дістаємо user
     const params = new URLSearchParams(initData);
-
-    // 1. hash
-    const hash = params.get('hash');
-    if (!hash) throw new UnauthorizedException('Missing hash');
-    params.delete('hash');
-
-    // 2. data_check_string
-    const dataCheckString = Array.from(params.entries())
-      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB)) // порівнюємо key1 і key2
-      .map(([key, value]) => `${key}=${value}`)
-      .join('\n');
-
-    console.log('DATA_CHECK_STRING:', dataCheckString);
-
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) throw new Error('Missing TELEGRAM_BOT_TOKEN');
-
-    console.log('BOT_TOKEN_PREFIX:', botToken.slice(0, 15)); // ⚠️ тільки для дебагу
-
-    // 3. secret_key = HMAC_SHA256(bot_token, "WebAppData")
-    const secretKey = crypto
-      .createHmac('sha256', 'WebAppData')
-      .update(botToken)
-      .digest(); // Buffer, не hex
-
-    // 4. hmac(data_check_string, secretKey)
-    const hmac = crypto
-      .createHmac('sha256', secretKey)
-      .update(dataCheckString)
-      .digest('hex');
-
-    console.log('Computed HMAC:', hmac);
-    console.log('Received HASH:', hash);
-
-    if (hmac.toLowerCase() !== hash.toLowerCase()) {
-      console.error('❌ Invalid Telegram signature');
-      throw new UnauthorizedException('Invalid Telegram signature');
-    }
-
-    // 5. user
     const userJson = params.get('user');
     if (!userJson) throw new UnauthorizedException('User not found');
 
@@ -69,7 +84,7 @@ export class AuthService {
     const authDate = params.get('auth_date') ?? null;
     const queryId = params.get('query_id') ?? null;
 
-    // 6. Upsert у Supabase
+    // 3. Upsert у Supabase + JWT (твій код далі)
     const client = this.supabase.getClient();
 
     const { data, error } = await client
