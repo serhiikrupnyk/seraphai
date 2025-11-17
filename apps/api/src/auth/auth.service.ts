@@ -8,6 +8,13 @@ export class AuthService {
   constructor(private readonly supabase: SupabaseService) {}
 
   async loginWithTelegram(initData: string) {
+    if (!initData) {
+      throw new UnauthorizedException('Empty initData');
+    }
+
+    // 👇 DEBUG, щоб бачити, що реально прилітає
+    console.log('INIT DATA RAW:', initData);
+
     const params = new URLSearchParams(initData);
 
     // 1. Дістаємо hash
@@ -21,24 +28,29 @@ export class AuthService {
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
 
+    console.log('DATA_CHECK_STRING:', dataCheckString);
+
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-    // 3. secret_key = SHA256(bot_token)
-    const secretKey = crypto.createHash('sha256').update(botToken).digest();
+    // 3. secret_key = HMAC_SHA256(bot_token, "WebAppData")
+    //   (ключ = "WebAppData", дані = botToken)
+    const secretKey = crypto
+      .createHmac('sha256', 'WebAppData')
+      .update(botToken)
+      .digest(); // ❗ без 'hex' — нам потрібен Buffer
 
-    // 4. Підписуємо як HMAC-SHA256
+    // 4. Підписуємо як HMAC-SHA256(data_check_string, secret_key)
     const hmac = crypto
       .createHmac('sha256', secretKey)
       .update(dataCheckString)
       .digest('hex');
 
-    // ⚠️ Перевірка (Telegram інколи присилає uppercase)
+    console.log('Computed HMAC:', hmac);
+    console.log('Received HASH:', hash);
+
     if (hmac.toLowerCase() !== hash.toLowerCase()) {
       console.error('❌ Invalid signature');
-      console.error('Computed HMAC:', hmac);
-      console.error('Received HASH:', hash);
-      console.error('String:', dataCheckString);
       throw new UnauthorizedException('Invalid Telegram signature');
     }
 
@@ -55,6 +67,18 @@ export class AuthService {
     }
 
     if (!user.id) throw new UnauthorizedException('User ID missing');
+
+    const authDate = params.get('auth_date') ?? undefined;
+    const queryId = params.get('query_id') ?? undefined;
+
+    // (опційно) перевірка "свіжості" initData
+    if (authDate) {
+      const authTs = Number(authDate) * 1000;
+      const maxAgeMs = 24 * 60 * 60 * 1000; // 24h
+      if (Date.now() - authTs > maxAgeMs) {
+        throw new UnauthorizedException('Auth data is too old');
+      }
+    }
 
     // 6. Upsert у Supabase
     const client = this.supabase.getClient();
@@ -96,12 +120,14 @@ export class AuthService {
       { expiresIn: '7d' },
     );
 
-    // 8. Повертаємо відповідь
+    // 8. Повертаємо відповідь (додаю auth_date / query_id, бо ти їх читаєш в контролері)
     return {
       ok: true,
       token,
       tgUser: user,
       dbUser: data,
+      auth_date: authDate,
+      query_id: queryId,
     };
   }
 }
