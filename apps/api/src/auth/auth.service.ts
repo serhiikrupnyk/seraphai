@@ -1,6 +1,7 @@
 // auth.service.ts (фрагмент)
 
 import * as crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 
