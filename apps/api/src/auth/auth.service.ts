@@ -1,91 +1,102 @@
-// auth.service.ts (фрагмент)
-
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 
 @Injectable()
 export class AuthService {
   constructor(private readonly supabase: SupabaseService) {}
 
-  private validateTelegramInitData(initData: string) {
+  async loginWithTelegram(initData: string) {
+    // initData — це строка формату "query_id=...&user=...&auth_date=...&hash=..."
     const params = new URLSearchParams(initData);
 
+    /**
+     * 1. Витягуємо hash і прибираємо його з набору
+     */
     const hash = params.get('hash');
-    if (!hash) throw new UnauthorizedException('Missing hash');
-
+    if (!hash) {
+      throw new UnauthorizedException('Missing hash');
+    }
     params.delete('hash');
 
-    // Формуємо масив пар key=value
-    const pairs: string[] = [];
-    for (const [key, value] of params.entries()) {
-      pairs.push(`${key}=${value}`);
-    }
-
-    // Сортуємо по ключу
-    pairs.sort(); // лексикографічно: auth_date..., query_id..., user...
-
-    const dataCheckString = pairs.join('\n');
+    /**
+     * 2. Формуємо data_check_string згідно з офіційною докою:
+     *    key=value\n у алфавітному порядку ключів.
+     */
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n');
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) throw new Error('Missing TELEGRAM_BOT_TOKEN');
+    if (!botToken) {
+      throw new Error('TELEGRAM_BOT_TOKEN is not configured');
+    }
 
-    console.log(
-      'BOT_TOKEN_PREFIX:',
-      botToken.slice(0, 10),
-      'LEN=',
-      botToken.length,
-    );
-    console.log('DATA_CHECK_STRING:', JSON.stringify(dataCheckString));
-    console.log('HASH FROM TG:', hash);
+    /**
+     * 3. secret_key = SHA256(bot_token)
+     */
+    const secretKey = crypto.createHash('sha256').update(botToken).digest();
 
-    // Крок 1: secretKey = HMAC_SHA256(bot_token, "WebAppData")
-    const secretKey = crypto
-      .createHmac('sha256', 'WebAppData')
-      .update(botToken)
-      .digest(); // Buffer
-
-    // Крок 2: hmac(data_check_string, secretKey)
-    const computedHash = crypto
+    /**
+     * 4. hmac = HMAC_SHA256(data_check_string, secret_key)
+     */
+    const hmac = crypto
       .createHmac('sha256', secretKey)
       .update(dataCheckString)
       .digest('hex');
 
-    console.log('COMPUTED_HASH:', computedHash);
-
-    if (computedHash.toLowerCase() !== hash.toLowerCase()) {
+    /**
+     * 5. Порівнюємо з hash від Telegram
+     */
+    if (hmac !== hash) {
+      // Трошки логів для дебагу (без витоку токена)
+      console.warn('Telegram signature mismatch', {
+        computedPrefix: hmac.slice(0, 8),
+        receivedPrefix: hash.slice(0, 8),
+      });
       throw new UnauthorizedException('Invalid Telegram signature');
     }
-  }
 
-  async loginWithTelegram(initData: string) {
-    if (!initData) throw new UnauthorizedException('Empty initData');
-
-    console.log('INIT DATA RAW:', initData);
-
-    // 1. Валідовуємо підпис
-    this.validateTelegramInitData(initData);
-
-    // 2. Дістаємо user
-    const params = new URLSearchParams(initData);
+    /**
+     * 6. Парсимо user з initData
+     */
     const userJson = params.get('user');
-    if (!userJson) throw new UnauthorizedException('User not found');
+    let user: any = null;
 
-    let user: any;
-    try {
-      user = JSON.parse(userJson);
-    } catch (e) {
-      console.error('User JSON parse error:', e);
-      throw new UnauthorizedException('Invalid user JSON');
+    if (userJson) {
+      try {
+        user = JSON.parse(userJson);
+      } catch (e) {
+        throw new UnauthorizedException('Invalid user JSON');
+      }
     }
 
-    if (!user.id) throw new UnauthorizedException('User ID missing');
+    const authDate = params.get('auth_date');
+    const queryId = params.get('query_id');
 
-    const authDate = params.get('auth_date') ?? null;
-    const queryId = params.get('query_id') ?? null;
+    if (!user || !user.id) {
+      throw new UnauthorizedException('User data missing');
+    }
 
-    // 3. Upsert у Supabase + JWT (твій код далі)
+    /**
+     * (Опціонально) 7. Перевірка свіжості auth_date
+     *    Можна відрізати дуже старі initData (наприклад, >1 дня)
+     */
+    if (authDate) {
+      const authTs = Number(authDate) * 1000;
+      const now = Date.now();
+      const maxAgeMs = 24 * 60 * 60 * 1000; // 24 години
+
+      if (Number.isFinite(authTs) && now - authTs > maxAgeMs) {
+        throw new UnauthorizedException('Auth data is too old');
+      }
+    }
+
+    /**
+     * 8. Upsert у Supabase
+     */
     const client = this.supabase.getClient();
 
     const { data, error } = await client
@@ -101,22 +112,29 @@ export class AuthService {
           photo_url: user.photo_url ?? null,
           last_seen_at: new Date().toISOString(),
         },
-        { onConflict: 'tg_id' },
+        {
+          onConflict: 'tg_id',
+        },
       )
       .select()
       .single();
 
     if (error) {
-      console.error('Supabase error:', error);
+      console.error('Supabase upsert error:', error);
       throw new Error('Failed to upsert user in Supabase');
     }
 
+    /**
+     * 9. Генеруємо JWT
+     */
     const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) throw new Error('JWT_SECRET missing');
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET is not configured');
+    }
 
     const token = jwt.sign(
       {
-        sub: data.id,
+        sub: data.id, // id з таблиці users
         tg_id: data.tg_id,
         username: data.username,
       },
@@ -126,11 +144,11 @@ export class AuthService {
 
     return {
       ok: true,
-      token,
-      tgUser: user,
-      dbUser: data,
       auth_date: authDate,
       query_id: queryId,
+      tgUser: user,
+      dbUser: data,
+      token,
     };
   }
 }
