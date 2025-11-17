@@ -21,7 +21,7 @@ export class AuthService {
 
     // 2. data_check_string
     const dataCheckString = Array.from(params.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a, b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
 
@@ -30,13 +30,15 @@ export class AuthService {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) throw new Error('Missing TELEGRAM_BOT_TOKEN');
 
-    // ❗ CORRECT secret key for WebApp
+    console.log('BOT_TOKEN_PREFIX:', botToken.slice(0, 15)); // ⚠️ тільки для дебагу
+
+    // 3. secret_key = HMAC_SHA256(bot_token, "WebAppData")
     const secretKey = crypto
       .createHmac('sha256', 'WebAppData')
       .update(botToken)
-      .digest(); // MUST be Buffer, NOT hex
+      .digest(); // Buffer, не hex
 
-    // 4. Compute HMAC
+    // 4. hmac(data_check_string, secretKey)
     const hmac = crypto
       .createHmac('sha256', secretKey)
       .update(dataCheckString)
@@ -46,17 +48,19 @@ export class AuthService {
     console.log('Received HASH:', hash);
 
     if (hmac.toLowerCase() !== hash.toLowerCase()) {
+      console.error('❌ Invalid Telegram signature');
       throw new UnauthorizedException('Invalid Telegram signature');
     }
 
-    // 5. Parse user
+    // 5. user
     const userJson = params.get('user');
     if (!userJson) throw new UnauthorizedException('User not found');
 
     let user: any;
     try {
       user = JSON.parse(userJson);
-    } catch {
+    } catch (e) {
+      console.error('User JSON parse error:', e);
       throw new UnauthorizedException('Invalid user JSON');
     }
 
@@ -91,7 +95,6 @@ export class AuthService {
       throw new Error('Failed to upsert user in Supabase');
     }
 
-    // 7. JWT
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) throw new Error('JWT_SECRET missing');
 
@@ -105,7 +108,6 @@ export class AuthService {
       { expiresIn: '7d' },
     );
 
-    // 8. Повертаємо все, що чекає контролер
     return {
       ok: true,
       token,
