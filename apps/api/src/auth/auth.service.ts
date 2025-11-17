@@ -21,7 +21,7 @@ export class AuthService {
 
     // 2. data_check_string
     const dataCheckString = Array.from(params.entries())
-      .sort(([a, b]) => a.localeCompare(b))
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB)) // порівнюємо key1 і key2
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
 
