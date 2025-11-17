@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type DebugInfo = {
   hasWindow: boolean;
@@ -10,138 +11,123 @@ type DebugInfo = {
   href: string;
 };
 
-type ApiUser = {
-  id: number;
-  tg_id: number;
-  username: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  language_code: string | null;
-  is_premium: boolean | null;
-  photo_url: string | null;
-};
-
 type ApiResponse = {
-  user: ApiUser;
+  user: any;
   telegram: any;
   token: string;
   meta: {
     ok: boolean;
-    auth_date?: string;
-    query_id?: string;
+    auth_date?: string | null;
+    query_id?: string | null;
   };
 };
 
 export default function TelegramAuthPage() {
+  const router = useRouter();
+
   const [status, setStatus] = useState('Ініціалізація...');
-  const [profile, setProfile] = useState<ApiUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [debug, setDebug] = useState<DebugInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   useEffect(() => {
-    try {
-      if (typeof window === 'undefined') {
-        setStatus('window недоступний');
-        return;
-      }
+    (async () => {
+      try {
+        if (typeof window === 'undefined') {
+          setStatus('window недоступний');
+          return;
+        }
 
-      const w: any = window;
-      const tgObj = w.Telegram;
-      const tgWebApp = tgObj?.WebApp;
+        const w: any = window;
+        const tgObj = w.Telegram;
+        const tgWebApp = tgObj?.WebApp;
 
-      const info: DebugInfo = {
-        hasWindow: true,
-        hasTelegram: !!tgObj,
-        hasWebApp: !!tgWebApp,
-        telegramKeys: tgObj ? Object.keys(tgObj) : [],
-        href: window.location.href,
-      };
-      setDebug(info);
+        const info: DebugInfo = {
+          hasWindow: true,
+          hasTelegram: !!tgObj,
+          hasWebApp: !!tgWebApp,
+          telegramKeys: tgObj ? Object.keys(tgObj) : [],
+          href: window.location.href,
+        };
+        setDebug(info);
 
-      if (!tgWebApp) {
-        setStatus('❌ Не вдалося знайти Telegram WebApp API');
-        return;
-      }
+        if (!tgWebApp) {
+          setStatus('❌ Не вдалося знайти Telegram WebApp API');
+          return;
+        }
 
-      setStatus('Telegram WebApp знайдено ✔');
-      tgWebApp.ready();
+        setStatus('Telegram WebApp знайдено ✔');
+        tgWebApp.ready();
 
-      const initData: string | undefined = tgWebApp.initData;
-      if (!initData) {
-        setStatus('❌ Немає initData від Telegram');
-        return;
-      }
+        const initData: string | undefined = tgWebApp.initData;
+        if (!initData) {
+          setStatus('❌ Немає initData від Telegram');
+          return;
+        }
 
-      if (!apiUrl) {
-        setStatus('❌ NEXT_PUBLIC_API_URL не налаштований');
-        return;
-      }
+        setStatus('Авторизація...');
 
-      setStatus('Авторизація...');
-
-      fetch(`${apiUrl}/auth/telegram`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ initData }),
-      })
-        .then(async (res) => {
-          if (!res.ok) {
-            const text = await res.text();
-            throw new Error(text || `HTTP ${res.status}`);
-          }
-          return res.json();
-        })
-        .then((data: ApiResponse) => {
-          setProfile(data.user);
-          setToken(data.token);
-          setStatus('Авторизовано ✔');
-        })
-        .catch((err) => {
-          console.error(err);
-          setError(String(err));
-          setStatus('❌ Помилка авторизації');
+        const res = await fetch(`${apiUrl}/auth/telegram`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ initData }),
         });
-    } catch (e: any) {
-      console.error(e);
-      setError(String(e));
-      setStatus('❌ Фатальна помилка на клієнті');
-    }
-  }, [apiUrl]);
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+
+        const data: ApiResponse = await res.json();
+
+        // збережемо JWT у sessionStorage (в межах сесії WebApp це норм)
+        if (typeof window !== 'undefined' && data.token) {
+          sessionStorage.setItem('seraphai_token', data.token);
+        }
+
+        setUser(data.user);
+        setStatus('Авторизовано ✔');
+
+        // невеличка пауза, щоб юзер побачив статус
+        setTimeout(() => {
+          router.replace('/app');
+        }, 600);
+      } catch (e: any) {
+        console.error(e);
+        setError(String(e));
+        setStatus('❌ Помилка авторизації');
+      }
+    })();
+  }, [apiUrl, router]);
 
   return (
     <main className="flex flex-col items-center justify-center min-h-screen p-4 bg-black text-white">
-      <h1 className="text-3xl font-bold mb-4">SeraphAI</h1>
+      <h1 className="text-3xl font-bold mb-2">SeraphAI</h1>
+      <p className="mb-6 text-sm text-white/60">Telegram WebApp авторизація</p>
 
       <div className="mb-4 text-lg">{status}</div>
 
-      {error && <div className="mb-4 text-red-400 text-sm break-words">Помилка: {error}</div>}
-
-      {profile && (
-        <div className="mt-4 p-4 rounded-xl bg-white/10 backdrop-blur text-left w-full max-w-md">
-          <div className="font-semibold mb-2">Профіль:</div>
-          <div>id: {profile.id}</div>
-          <div>tg_id: {profile.tg_id}</div>
-          <div>
-            {profile.first_name} {profile.last_name}
-          </div>
-          <div>@{profile.username}</div>
-          <div>lang: {profile.language_code}</div>
-          {profile.is_premium && <div>Telegram Premium ✔</div>}
+      {error && (
+        <div className="mb-4 text-red-400 text-sm break-words w-full max-w-md">
+          Помилка: {error}
         </div>
       )}
 
-      {token && (
-        <div className="mt-4 p-4 rounded-xl bg-white/10 backdrop-blur text-left w-full max-w-md text-xs break-words">
-          <div className="font-semibold mb-2">Сесія SeraphAI:</div>
+      {user && (
+        <div className="mt-4 p-4 rounded-xl bg-white/10 backdrop-blur text-left w-full max-w-md">
+          <div className="font-semibold mb-2">Профіль:</div>
+          <div>id: {user.id}</div>
+          <div>tg_id: {user.tg_id}</div>
           <div>
-            JWT отримано (довжина: {token.length}). Надалі будемо відправляти його в заголовку{' '}
-            <code>Authorization: Bearer ...</code>.
+            {user.first_name} {user.last_name}
           </div>
+          <div>@{user.username}</div>
+          <div>lang: {user.language_code}</div>
+          {user.is_premium && <div>Telegram Premium ✔</div>}
         </div>
       )}
 
