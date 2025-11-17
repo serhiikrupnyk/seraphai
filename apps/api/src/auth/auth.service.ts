@@ -10,55 +10,51 @@ export class AuthService {
   async loginWithTelegram(initData: string) {
     const params = new URLSearchParams(initData);
 
-    // 1. Дістаємо hash, видаляємо його з набору
+    // 1. Дістаємо hash
     const hash = params.get('hash');
-    if (!hash) {
-      throw new UnauthorizedException('Missing hash');
-    }
+    if (!hash) throw new UnauthorizedException('Missing hash');
     params.delete('hash');
 
-    // 2. Формуємо data_check_string (key=value\n...) по алфавіту
+    // 2. Формуємо data_check_string (в алфавітному порядку)
     const dataCheckString = Array.from(params.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) {
-      throw new Error('TELEGRAM_BOT_TOKEN is not configured');
-    }
+    if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
     // 3. secret_key = SHA256(bot_token)
     const secretKey = crypto.createHash('sha256').update(botToken).digest();
 
-    // 4. hmac = HMAC_SHA256(data_check_string, secret_key)
+    // 4. Підписуємо як HMAC-SHA256
     const hmac = crypto
       .createHmac('sha256', secretKey)
       .update(dataCheckString)
       .digest('hex');
 
-    if (hmac !== hash) {
+    // ⚠️ Перевірка (Telegram інколи присилає uppercase)
+    if (hmac.toLowerCase() !== hash.toLowerCase()) {
+      console.error('❌ Invalid signature');
+      console.error('Computed HMAC:', hmac);
+      console.error('Received HASH:', hash);
+      console.error('String:', dataCheckString);
       throw new UnauthorizedException('Invalid Telegram signature');
     }
 
-    // 5. Якщо підпис валідний — дістаємо user
-    const userJson = params.get('user');
-    let user: any = null;
+    // 5. Парсимо user JSON
+    const userStr = params.get('user');
+    if (!userStr) throw new UnauthorizedException('User not found');
 
-    if (userJson) {
-      try {
-        user = JSON.parse(userJson);
-      } catch (e) {
-        throw new UnauthorizedException('Invalid user JSON');
-      }
+    let user: any;
+    try {
+      user = JSON.parse(userStr);
+    } catch (e) {
+      console.error('User JSON parse error:', e);
+      throw new UnauthorizedException('Invalid user JSON');
     }
 
-    const authDate = params.get('auth_date');
-    const queryId = params.get('query_id');
-
-    if (!user || !user.id) {
-      throw new UnauthorizedException('User data missing');
-    }
+    if (!user.id) throw new UnauthorizedException('User ID missing');
 
     // 6. Upsert у Supabase
     const client = this.supabase.getClient();
@@ -76,27 +72,23 @@ export class AuthService {
           photo_url: user.photo_url ?? null,
           last_seen_at: new Date().toISOString(),
         },
-        {
-          onConflict: 'tg_id',
-        },
+        { onConflict: 'tg_id' },
       )
       .select()
       .single();
 
     if (error) {
-      console.error('Supabase upsert error:', error);
+      console.error('Supabase error:', error);
       throw new Error('Failed to upsert user in Supabase');
     }
 
     // 7. Генеруємо JWT
     const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      throw new Error('JWT_SECRET is not configured');
-    }
+    if (!jwtSecret) throw new Error('JWT_SECRET missing');
 
     const token = jwt.sign(
       {
-        sub: data.id, // id з таблиці users
+        sub: data.id,
         tg_id: data.tg_id,
         username: data.username,
       },
@@ -104,13 +96,12 @@ export class AuthService {
       { expiresIn: '7d' },
     );
 
+    // 8. Повертаємо відповідь
     return {
       ok: true,
-      auth_date: authDate,
-      query_id: queryId,
+      token,
       tgUser: user,
       dbUser: data,
-      token,
     };
   }
 }
