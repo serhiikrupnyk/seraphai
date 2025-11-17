@@ -62,7 +62,10 @@ export class AuthService {
 
     if (!user.id) throw new UnauthorizedException('User ID missing');
 
-    // 6. Upsert Supabase
+    const authDate = params.get('auth_date') ?? null;
+    const queryId = params.get('query_id') ?? null;
+
+    // 6. Upsert у Supabase
     const client = this.supabase.getClient();
 
     const { data, error } = await client
@@ -83,7 +86,10 @@ export class AuthService {
       .select()
       .single();
 
-    if (error) throw new Error('Supabase error: ' + error.message);
+    if (error) {
+      console.error('Supabase error:', error);
+      throw new Error('Failed to upsert user in Supabase');
+    }
 
     // 7. JWT
     const jwtSecret = process.env.JWT_SECRET;
@@ -99,11 +105,14 @@ export class AuthService {
       { expiresIn: '7d' },
     );
 
+    // 8. Повертаємо все, що чекає контролер
     return {
       ok: true,
       token,
       tgUser: user,
       dbUser: data,
+      auth_date: authDate,
+      query_id: queryId,
     };
   }
 }
