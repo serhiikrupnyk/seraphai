@@ -1,29 +1,41 @@
+// src/redis/redis.service.ts
 import { Injectable } from '@nestjs/common';
 import { Redis } from '@upstash/redis';
 
 @Injectable()
 export class RedisService {
-  public redis: Redis;
+  private client: Redis;
 
   constructor() {
-    this.redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    if (!url || !token) {
+      throw new Error(
+        'UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN is not configured',
+      );
+    }
+
+    this.client = new Redis({
+      url,
+      token,
     });
   }
 
-  async set(key: string, value: any, ttlSeconds?: number) {
+  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
     if (ttlSeconds) {
-      return this.redis.set(key, value, { ex: ttlSeconds });
+      await this.client.set(key, value, { ex: ttlSeconds });
+    } else {
+      await this.client.set(key, value);
     }
-    return this.redis.set(key, value);
   }
 
-  async get<T = any>(key: string): Promise<T | null> {
-    return this.redis.get(key) as T;
+  async get(key: string): Promise<string | null> {
+    const value = await this.client.get<string | null>(key);
+    return value ?? null;
   }
 
-  async del(key: string) {
-    return this.redis.del(key);
+  async del(key: string): Promise<void> {
+    await this.client.del(key);
   }
 }

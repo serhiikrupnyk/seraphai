@@ -14,6 +14,8 @@ const telegram_module_1 = require("./telegram/telegram.module");
 const config_1 = require("@nestjs/config");
 const supabase_module_1 = require("./supabase/supabase.module");
 const auth_module_1 = require("./auth/auth.module");
+const redis_service_1 = require("./redis/redis.service");
+const redis_test_controller_1 = require("./redis/redis-test.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -28,8 +30,8 @@ exports.AppModule = AppModule = __decorate([
             supabase_module_1.SupabaseModule,
             auth_module_1.AuthModule,
         ],
-        controllers: [app_controller_1.AppController],
-        providers: [app_service_1.AppService],
+        controllers: [app_controller_1.AppController, redis_test_controller_1.RedisTestController],
+        providers: [app_service_1.AppService, redis_service_1.RedisService],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

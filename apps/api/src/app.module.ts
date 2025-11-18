@@ -6,7 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
 import { RedisService } from './redis/redis.service';
-import { RedisTestController } from './redis/redis.controller';
+import { RedisTestController } from './redis/redis-test.controller';
 
 @Module({
   imports: [
@@ -19,7 +19,7 @@ import { RedisTestController } from './redis/redis.controller';
     SupabaseModule,
     AuthModule,
   ],
-  controllers: [AppController, RedisService, RedisTestController],
+  controllers: [AppController, RedisTestController],
   providers: [AppService, RedisService],
 })
 export class AppModule {}
