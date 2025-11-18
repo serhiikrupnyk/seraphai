@@ -5,6 +5,8 @@ import { TelegramModule } from './telegram/telegram.module';
 import { ConfigModule } from '@nestjs/config';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
+import { RedisService } from './redis/redis.service';
+import { RedisTestController } from './redis/redis.controller';
 
 @Module({
   imports: [
@@ -17,7 +19,7 @@ import { AuthModule } from './auth/auth.module';
     SupabaseModule,
     AuthModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, RedisService, RedisTestController],
+  providers: [AppService, RedisService],
 })
 export class AppModule {}
